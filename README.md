@@ -3,19 +3,25 @@
 ## 📁 Project Structure
 
 ```
-BD_Autonomous_YOLOv11_web_app-1/
-├── Home.py                          # Main landing page (auto-discovers projects)
-├── requirements.txt                 # Python dependencies
-├── packages.txt                     # System packages
-├── temp/                            # Temporary files
-└── pages/                           # Projects directory
-    ├── 1_🚗_Bangladesh_Traffic.py  # Wrapper page for autonomous_vehicle
-    └── autonomous_vehicle/          # Example ML Project
-        ├── config.py                # Project metadata (auto-loaded by Home.py)
-        ├── main.py                  # Actual Streamlit application
-        ├── README.md                # Project documentation
-        └── weights/                 # Model weights
-            └── best.pt              # Trained model
+ML_Portfolio_web_app/
+├── Home.py                                    # Main landing page (auto-discovers projects)
+├── requirements.txt                           # Python dependencies
+├── packages.txt                               # System packages
+├── temp/                                      # Temporary files
+└── pages/                                     # Projects directory
+    ├── 1_🚗_Bangladesh_Traffic.py            # Wrapper for autonomous_vehicle
+    ├── 2_🎗️_Breast_Cancer_Detection.py      # Wrapper for breast_cancer_detection
+    ├── autonomous_vehicle/                    # Traffic Detection Project
+    │   ├── config.py                          # Project metadata
+    │   ├── main.py                            # Streamlit app
+    │   ├── README.md                          # Project docs
+    │   └── weights/
+    │       └── best.pt                        # YOLOv11 + CBAM model
+    └── breast_cancer_detection/               # Breast Cancer Detection Project
+        ├── config.py                          # Project metadata
+        ├── main.py                            # Streamlit app
+        └── weights/
+            └── best.pt                        # YOLOv11 model
 ```
 
 ## 🚀 How It Works
@@ -123,11 +129,21 @@ To update a project's information (title, description, status, etc.):
 
 ## 📊 Current Projects
 
-### 1. Bangladesh Traffic Perception System
+### 1. Bangladesh Traffic Perception System 🚗
 - **Location**: `pages/autonomous_vehicle/`
 - **Config**: `pages/autonomous_vehicle/config.py`
 - **Model**: `pages/autonomous_vehicle/weights/best.pt`
 - **Tech**: YOLOv11 + CBAM Attention
+- **Performance**: mAP@50 ~75%
+- **Classes**: Rickshaw, CNG, Bus, Truck, Car, Cycle, Bike, Mini-Truck, People
+
+### 2. Breast Cancer Detection System 🎗️
+- **Location**: `pages/breast_cancer_detection/`
+- **Config**: `pages/breast_cancer_detection/config.py`
+- **Model**: `pages/breast_cancer_detection/weights/best.pt`
+- **Tech**: YOLOv11 Object Detection
+- **Performance**: mAP@50 91.7%, Precision 98%, Recall 81%
+- **Dataset**: Duke MRI Dataset (1,007 slices)
 
 ## 🔧 Running the Application
 

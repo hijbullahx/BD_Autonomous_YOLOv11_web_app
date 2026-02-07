@@ -339,7 +339,6 @@ else:
         
         st.markdown("")  # Add spacing between projects
 
-st.markdown("[🔗 View on GitHub](https://github.com/hijbullahx)")
 st.markdown("---")
 
 # Contact Information
