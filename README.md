@@ -148,13 +148,14 @@ To update a project's information (title, description, status, etc.):
 ## 🔧 Running the Application
 
 ```bash
-# Activate virtual environment
-source venv/Scripts/activate  # On Windows Git Bash
-# or
-venv\Scripts\activate         # On Windows CMD
+# Install dependencies
+pip install -r requirements.txt
 
-# Run Streamlit
-streamlit run Home.py
+# Run Streamlit (recommended)
+python -m streamlit run Home.py
+
+# Compatibility entrypoint (also works)
+python -m streamlit run app.py
 ```
 
 ## 📝 Project Config Reference
