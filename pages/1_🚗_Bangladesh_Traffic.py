@@ -52,12 +52,19 @@ class CBAM(nn.Module):
         return x
 
 # Register CBAM with ultralytics BEFORE loading the model
-import ultralytics.nn.tasks as tasks
-import ultralytics.nn.modules.block as block
-tasks.CBAM = CBAM
-block.CBAM = CBAM  # Register in the block module where it's expected
-block.ChannelAttention = ChannelAttention
-block.SpatialAttention = SpatialAttention
+try:
+    import ultralytics.nn.tasks as tasks
+    import ultralytics.nn.modules.block as block
+
+    tasks.CBAM = CBAM
+    block.CBAM = CBAM  # Register in the block module where it's expected
+    block.ChannelAttention = ChannelAttention
+    block.SpatialAttention = SpatialAttention
+except Exception as exc:
+    st.error("Failed to import project dependencies for Bangladesh Traffic page.")
+    st.code(str(exc), language="text")
+    st.info("If deployed on Streamlit Cloud, pin Python to 3.11 using runtime.txt and redeploy.")
+    st.stop()
 
 # Now execute the main project file
 main_file = os.path.join(project_dir, "main.py")
