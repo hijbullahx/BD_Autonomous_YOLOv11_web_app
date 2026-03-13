@@ -63,7 +63,7 @@ try:
 except Exception as exc:
     st.error("Failed to import project dependencies for Bangladesh Traffic page.")
     st.code(str(exc), language="text")
-    st.info("If deployed on Streamlit Cloud, pin Python to 3.11 using runtime.txt and redeploy.")
+    st.info("On Streamlit Cloud, ensure runtime.txt is python-3.11 and packages.txt includes libglib2.0-0t64, then redeploy.")
     st.stop()
 
 # Now execute the main project file
