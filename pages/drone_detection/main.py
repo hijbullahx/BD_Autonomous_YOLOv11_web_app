@@ -337,14 +337,27 @@ if uploaded_file is not None:
                     break
 
                 frame_start = time.perf_counter()
-                results = model.track(
-                    frame,
-                    conf=confidence,
-                    iou=iou_threshold,
-                    persist=True,
-                    tracker="bytetrack.yaml",
-                    verbose=False,
-                )
+                try:
+                    results = model.track(
+                        frame,
+                        conf=confidence,
+                        iou=iou_threshold,
+                        persist=True,
+                        tracker="bytetrack.yaml",
+                        verbose=False,
+                    )
+                except (ModuleNotFoundError, ImportError) as e:
+                    # Common missing dependency: 'lap' used by the tracker internals
+                    st.warning(
+                        "Tracker dependencies missing (e.g. 'lap'). "
+                        "Falling back to frame-wise detection. Install 'lap' to enable ByteTrack."
+                    )
+                    results = model(
+                        frame,
+                        conf=confidence,
+                        iou=iou_threshold,
+                        verbose=False,
+                    )
                 inference_times.append(time.perf_counter() - frame_start)
 
                 result = results[0]
