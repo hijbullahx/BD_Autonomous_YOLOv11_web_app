@@ -5,7 +5,7 @@ This config is automatically loaded by Home.py
 
 PROJECT_CONFIG = {
     "id": "drone_detection",
-    "title": "🚁 ANTLINGS Drone Computer Vision Pipeline",
+    "title": " ANTLINGS Drone Computer Vision Pipeline",
     "status": "Active",
     "icon": "🚁",
     "page_name": "3_🚁_Drone_Detection.py",
