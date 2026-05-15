@@ -10,4 +10,5 @@ sys.path.insert(0, project_dir)
 main_file = os.path.join(project_dir, "main.py")
 with open(main_file, encoding='utf-8') as f:
     code = f.read()
-    exec(code, globals())
+    globals()["__file__"] = main_file
+    exec(compile(code, main_file, "exec"), globals())
