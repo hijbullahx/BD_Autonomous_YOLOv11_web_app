@@ -254,10 +254,10 @@ def process_video_to_file(
     writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     processed_frames = 0
-    class_event_counts = Counter()
     tracked_objects = {}
+    unique_track_ids = set()
     inference_times = []
-    confidence_scores = []
+    best_confidence_by_track = {}
     warned_tracker = False
     last_annotated = None
     ui_update_interval = 5
@@ -320,23 +320,27 @@ def process_video_to_file(
         if boxes is not None and len(boxes) > 0:
             rows, _, _ = build_detection_rows(model, boxes, frame_index=processed_frames + 1)
             for row in rows:
-                class_event_counts[row["Class"]] += 1
-                confidence_scores.append(row["Confidence"])
                 track_id = row["Track ID"]
-                key = track_id if track_id != "-" else f"frame-{processed_frames + 1}-{row['Index']}"
-                if key not in tracked_objects:
-                    tracked_objects[key] = {
-                        "Track ID": key,
+                if track_id == "-":
+                    continue
+
+                unique_track_ids.add(track_id)
+                current_best = best_confidence_by_track.get(track_id, 0.0)
+                best_confidence_by_track[track_id] = max(current_best, row["Confidence"])
+
+                if track_id not in tracked_objects:
+                    tracked_objects[track_id] = {
+                        "Track ID": track_id,
                         "Class": row["Class"],
                         "Best Confidence": row["Confidence"],
                         "First Seen": processed_frames + 1,
                         "Last Seen": processed_frames + 1,
                     }
                 else:
-                    tracked_objects[key]["Best Confidence"] = max(
-                        tracked_objects[key]["Best Confidence"], row["Confidence"]
+                    tracked_objects[track_id]["Best Confidence"] = max(
+                        tracked_objects[track_id]["Best Confidence"], row["Confidence"]
                     )
-                    tracked_objects[key]["Last Seen"] = processed_frames + 1
+                    tracked_objects[track_id]["Last Seen"] = processed_frames + 1
 
         processed_frames += 1
         if total_frames > 0:
@@ -345,13 +349,14 @@ def process_video_to_file(
         if processed_frames % ui_update_interval == 0 or (total_frames > 0 and processed_frames == total_frames):
             avg_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
             fps_live = 1.0 / avg_time if avg_time > 0 else 0.0
+            highest_live_conf = max(best_confidence_by_track.values()) if best_confidence_by_track else 0.0
             status_placeholder.markdown(
                 f"""
                 <div class="live-summary">
                     <strong>Processing Uploaded Video</strong><br>
                     Processed Frames: <strong>{processed_frames}</strong><br>
-                    Tracked Objects: <strong>{len(tracked_objects)}</strong><br>
-                    Detection Events: <strong>{sum(class_event_counts.values())}</strong><br>
+                    Unique Tracks: <strong>{len(unique_track_ids)}</strong><br>
+                    Highest Confidence: <strong>{highest_live_conf * 100:.2f}%</strong><br>
                     Approx FPS: <strong>{fps_live:.1f}</strong>
                 </div>
                 """,
@@ -368,12 +373,12 @@ def process_video_to_file(
     return {
         "processed_frames": processed_frames,
         "tracked_objects": tracked_objects,
-        "class_event_counts": class_event_counts,
-        "highest_confidence": max(confidence_scores) if confidence_scores else 0.0,
-        "total_detections": sum(class_event_counts.values()),
+        "unique_track_ids": unique_track_ids,
+        "highest_confidence": max(best_confidence_by_track.values()) if best_confidence_by_track else 0.0,
+        "total_detections": len(unique_track_ids),
+        "class_breakdown": Counter(obj["Class"] for obj in tracked_objects.values()),
         "avg_fps": avg_fps,
         "avg_latency_ms": avg_latency_ms,
-        "events": sum(class_event_counts.values()),
     }
 
 
@@ -500,7 +505,7 @@ if uploaded_file is not None:
 
         needs_processing = (
             st.session_state.get("drone_process_signature") != process_signature
-            or not os.path.exists(output_file)
+            or not os.path.exists(raw_output_file)
         )
 
         if needs_processing:
@@ -537,9 +542,10 @@ if uploaded_file is not None:
             st.write(f"Saved output file: {final_output_file}")
 
         total_detections = stats.get("total_detections", 0)
-        unique_classes = len(stats.get("class_event_counts", Counter()))
+        class_breakdown_counter = stats.get("class_breakdown", Counter())
+        unique_classes = len(class_breakdown_counter)
         highest_confidence = stats.get("highest_confidence", 0.0)
-        class_breakdown = dict(stats.get("class_event_counts", Counter()).most_common())
+        class_breakdown = dict(class_breakdown_counter.most_common())
 
         st.markdown("### Detection Statistics")
         metric_col1, metric_col2, metric_col3 = st.columns(3)
