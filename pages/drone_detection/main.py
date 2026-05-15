@@ -1,6 +1,9 @@
 import os
 import sys
 import time
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from collections import Counter
 
@@ -11,6 +14,11 @@ import torch
 import importlib.util
 from PIL import Image
 from ultralytics import YOLO
+
+try:
+    import imageio_ffmpeg
+except Exception:
+    imageio_ffmpeg = None
 
 def load_project_config():
     config_path = os.path.join(os.path.dirname(__file__), "config.py")
@@ -249,6 +257,7 @@ def process_video_to_file(
     class_event_counts = Counter()
     tracked_objects = {}
     inference_times = []
+    confidence_scores = []
     warned_tracker = False
     last_annotated = None
     ui_update_interval = 5
@@ -312,6 +321,7 @@ def process_video_to_file(
             rows, _, _ = build_detection_rows(model, boxes, frame_index=processed_frames + 1)
             for row in rows:
                 class_event_counts[row["Class"]] += 1
+                confidence_scores.append(row["Confidence"])
                 track_id = row["Track ID"]
                 key = track_id if track_id != "-" else f"frame-{processed_frames + 1}-{row['Index']}"
                 if key not in tracked_objects:
@@ -359,6 +369,8 @@ def process_video_to_file(
         "processed_frames": processed_frames,
         "tracked_objects": tracked_objects,
         "class_event_counts": class_event_counts,
+        "highest_confidence": max(confidence_scores) if confidence_scores else 0.0,
+        "total_detections": sum(class_event_counts.values()),
         "avg_fps": avg_fps,
         "avg_latency_ms": avg_latency_ms,
         "events": sum(class_event_counts.values()),
@@ -375,6 +387,38 @@ def read_video_bytes(video_path: str) -> bytes:
         raise ValueError(f"Processed video is empty: {video_path}")
 
     return path.read_bytes()
+
+
+def transcode_video_for_browser(input_path: str, output_path: str) -> str:
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe and imageio_ffmpeg is not None:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+
+    if not ffmpeg_exe:
+        return input_path
+
+    command = [
+        ffmpeg_exe,
+        "-y",
+        "-i",
+        input_path,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        output_path,
+    ]
+
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        return input_path
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+        return input_path
+
+    return output_path
 
 
 st.sidebar.header("⚙️ System Config")
@@ -448,8 +492,10 @@ if uploaded_file is not None:
         with open(temp_file, "wb") as file_handle:
             file_handle.write(uploaded_file.read())
 
-        output_name = f"processed_{os.path.splitext(uploaded_file.name)[0]}.mp4"
-        output_file = os.path.join(temp_dir, output_name)
+        raw_output_name = f"processed_raw_{os.path.splitext(uploaded_file.name)[0]}.mp4"
+        raw_output_file = os.path.join(temp_dir, raw_output_name)
+        browser_output_name = f"processed_browser_{os.path.splitext(uploaded_file.name)[0]}.mp4"
+        browser_output_file = os.path.join(temp_dir, browser_output_name)
         process_signature = f"{uploaded_file.name}:{uploaded_file.size}:{confidence}:{iou_threshold}"
 
         needs_processing = (
@@ -463,7 +509,7 @@ if uploaded_file is not None:
             with st.spinner("Processing video during upload workflow... this may take a while for large files"):
                 stats = process_video_to_file(
                     input_path=temp_file,
-                    output_path=output_file,
+                    output_path=raw_output_file,
                     model=model,
                     confidence=confidence,
                     iou_threshold=iou_threshold,
@@ -474,11 +520,13 @@ if uploaded_file is not None:
                     status_placeholder=status_placeholder,
                 )
 
+            final_output_file = transcode_video_for_browser(raw_output_file, browser_output_file)
+
             st.session_state["drone_process_signature"] = process_signature
-            st.session_state["drone_output_file"] = output_file
+            st.session_state["drone_output_file"] = final_output_file
             st.session_state["drone_video_stats"] = stats
 
-        final_output_file = st.session_state.get("drone_output_file", output_file)
+        final_output_file = st.session_state.get("drone_output_file", raw_output_file)
         stats = st.session_state.get("drone_video_stats", {})
 
         try:
@@ -488,50 +536,31 @@ if uploaded_file is not None:
             st.code(str(exc), language="text")
             st.write(f"Saved output file: {final_output_file}")
 
-        tracked_objects = stats.get("tracked_objects", {})
-        class_event_counts = stats.get("class_event_counts", Counter())
-        avg_fps = stats.get("avg_fps", 0.0)
-        avg_latency_ms = stats.get("avg_latency_ms", 0.0)
-        events = stats.get("events", 0)
+        total_detections = stats.get("total_detections", 0)
+        unique_classes = len(stats.get("class_event_counts", Counter()))
+        highest_confidence = stats.get("highest_confidence", 0.0)
+        class_breakdown = dict(stats.get("class_event_counts", Counter()).most_common())
 
-        st.markdown("### 📊 Performance Metrics")
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
+        st.markdown("### Detection Statistics")
+        metric_col1, metric_col2, metric_col3 = st.columns(3)
+        with metric_col1:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Tracked Objects</div><div class="metric-value">{len(tracked_objects)}</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Total Detections</div><div class="metric-value">{total_detections}</div></div>',
                 unsafe_allow_html=True,
             )
-        with m2:
+        with metric_col2:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Detection Events</div><div class="metric-value">{events}</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Unique Classes</div><div class="metric-value">{unique_classes}</div></div>',
                 unsafe_allow_html=True,
             )
-        with m3:
+        with metric_col3:
             st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Avg FPS</div><div class="metric-value">{avg_fps:.1f}</div></div>',
-                unsafe_allow_html=True,
-            )
-        with m4:
-            st.markdown(
-                f'<div class="metric-card"><div class="metric-label">Latency / Frame</div><div class="metric-value">{avg_latency_ms:.1f} ms</div></div>',
+                f'<div class="metric-card"><div class="metric-label">Highest Confidence</div><div class="metric-value">{highest_confidence * 100:.2f}%</div></div>',
                 unsafe_allow_html=True,
             )
 
-        st.markdown("### 🧾 Tracked Object Summary")
-        if tracked_objects:
-            st.dataframe(list(tracked_objects.values()), use_container_width=True, hide_index=True)
-        else:
-            st.info("No persistent tracks were recorded in the video.")
-
-        st.markdown("### 🎯 Class Frequency")
-        if class_event_counts:
-            class_summary_rows = [
-                {"Class": class_name, "Count": count}
-                for class_name, count in class_event_counts.most_common()
-            ]
-            st.dataframe(class_summary_rows, use_container_width=True, hide_index=True)
-        else:
-            st.info("No objects were detected in the uploaded video.")
+        st.markdown("### 🎯 Class Breakdown")
+        st.code(json.dumps(class_breakdown, indent=2), language="json")
 
     else:
         st.subheader("🖼️ Drone Image Inference")
