@@ -5,7 +5,7 @@ This config is automatically loaded by Home.py
 
 PROJECT_CONFIG = {
     "id": "autonomous_vehicle",
-    "title": "Autonomous Vehicle Traffic Perception System",
+    "title": "Bangladesh Traffic Perception System",
     "status": "Active",
     "icon": "🚗",
     "page_name": "1_Bangladesh_Traffic.py",  # Wrapper page in pages/
