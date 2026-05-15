@@ -122,7 +122,7 @@ Full documentation in: **README.md**
 
 ## 🎯 Current Projects
 
-### Bangladesh Traffic Perception System
+### Autonomous Vehicle Traffic Perception System
 - Location: `pages/autonomous_vehicle/`
 - Config: `pages/autonomous_vehicle/config.py`
 - Wrapper: `pages/1_🚗_Bangladesh_Traffic.py`

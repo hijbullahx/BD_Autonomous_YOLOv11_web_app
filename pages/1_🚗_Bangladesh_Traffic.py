@@ -61,7 +61,7 @@ try:
     block.ChannelAttention = ChannelAttention
     block.SpatialAttention = SpatialAttention
 except Exception as exc:
-    st.error("Failed to import project dependencies for Bangladesh Traffic page.")
+    st.error("Failed to import project dependencies for the traffic page.")
     st.code(str(exc), language="text")
     st.info("On Streamlit Cloud, ensure runtime.txt is python-3.11 and packages.txt includes libglib2.0-0t64, then redeploy.")
     st.stop()

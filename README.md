@@ -129,7 +129,7 @@ To update a project's information (title, description, status, etc.):
 
 ## 📊 Current Projects
 
-### 1. Bangladesh Traffic Perception System 🚗
+### 1. Autonomous Vehicle Traffic Perception System 🚗
 - **Location**: `pages/autonomous_vehicle/`
 - **Config**: `pages/autonomous_vehicle/config.py`
 - **Model**: `pages/autonomous_vehicle/weights/best.pt`

@@ -1,4 +1,4 @@
-# Bangladesh Traffic Perception System
+# Autonomous Vehicle Traffic Perception System
 
 ## Project Structure
 ```
@@ -12,7 +12,7 @@ autonomous_vehicle/
 
 ## Model Details
 - **Architecture**: YOLOv11 Medium + CBAM Attention
-- **Dataset**: Bangladesh Local Traffic
+- **Dataset**: Local Traffic
 - **Performance**: mAP@50 ~75%
 - **Classes**: Rickshaw, CNG, Bus, Truck, Car, Cycle, Bike, Mini-Truck, People
 
