@@ -588,7 +588,7 @@ if uploaded_file is not None:
 
         boxes = result.boxes
         total_detections = len(boxes) if boxes is not None else 0
-        rows, class_counts, _ = build_detection_rows(model, boxes if boxes is not None else [], None)
+        _, class_counts, _ = build_detection_rows(model, boxes if boxes is not None else [], None)
         unique_classes = len(class_counts)
         detections_per_second = (total_detections / inference_time) if inference_time > 0 else 0.0
 
@@ -621,12 +621,6 @@ if uploaded_file is not None:
             st.dataframe(summary_rows, use_container_width=True, hide_index=True)
         else:
             st.warning("No objects detected in the image. Try lowering the confidence threshold.")
-
-        st.markdown("### 🔎 Object Details")
-        if rows:
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        else:
-            st.info("No detection details to show.")
 
         if boxes is not None and len(boxes) > 0:
             from io import BytesIO
