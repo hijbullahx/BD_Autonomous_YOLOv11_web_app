@@ -218,6 +218,9 @@ def process_video_to_file(
     model: YOLO,
     confidence: float,
     iou_threshold: float,
+    imgsz: int,
+    frame_stride: int,
+    use_fp16: bool,
     progress_bar,
     status_placeholder,
 ):
@@ -238,11 +241,28 @@ def process_video_to_file(
     tracked_objects = {}
     inference_times = []
     warned_tracker = False
+    last_annotated = None
+    ui_update_interval = 5
+    frame_idx = 0
 
     while cap.isOpened():
         ok, frame = cap.read()
         if not ok:
             break
+
+        frame_idx += 1
+        run_inference = frame_stride <= 1 or (frame_idx % frame_stride == 0)
+
+        if not run_inference:
+            # Keep output duration unchanged while skipping expensive inference on some frames.
+            frame_out = last_annotated if last_annotated is not None else frame
+            if frame_out.shape[1] != width or frame_out.shape[0] != height:
+                frame_out = cv2.resize(frame_out, (width, height))
+            writer.write(frame_out)
+            processed_frames += 1
+            if total_frames > 0:
+                progress_bar.progress(min(int((processed_frames / total_frames) * 100), 100))
+            continue
 
         start_time = time.perf_counter()
         try:
@@ -250,6 +270,8 @@ def process_video_to_file(
                 frame,
                 conf=confidence,
                 iou=iou_threshold,
+                imgsz=imgsz,
+                half=use_fp16,
                 persist=True,
                 tracker="bytetrack.yaml",
                 verbose=False,
@@ -258,11 +280,19 @@ def process_video_to_file(
             if not warned_tracker:
                 st.warning("Tracker dependencies missing (e.g. 'lap'). Falling back to frame-wise detection.")
                 warned_tracker = True
-            results = model(frame, conf=confidence, iou=iou_threshold, verbose=False)
+            results = model(
+                frame,
+                conf=confidence,
+                iou=iou_threshold,
+                imgsz=imgsz,
+                half=use_fp16,
+                verbose=False,
+            )
 
         inference_times.append(time.perf_counter() - start_time)
         result = results[0]
         annotated = result.plot()
+        last_annotated = annotated
 
         if annotated.shape[1] != width or annotated.shape[0] != height:
             annotated = cv2.resize(annotated, (width, height))
@@ -293,20 +323,21 @@ def process_video_to_file(
         if total_frames > 0:
             progress_bar.progress(min(int((processed_frames / total_frames) * 100), 100))
 
-        avg_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
-        fps_live = 1.0 / avg_time if avg_time > 0 else 0.0
-        status_placeholder.markdown(
-            f"""
-            <div class="live-summary">
-                <strong>Processing Uploaded Video</strong><br>
-                Processed Frames: <strong>{processed_frames}</strong><br>
-                Tracked Objects: <strong>{len(tracked_objects)}</strong><br>
-                Detection Events: <strong>{sum(class_event_counts.values())}</strong><br>
-                Approx FPS: <strong>{fps_live:.1f}</strong>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        if processed_frames % ui_update_interval == 0 or (total_frames > 0 and processed_frames == total_frames):
+            avg_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
+            fps_live = 1.0 / avg_time if avg_time > 0 else 0.0
+            status_placeholder.markdown(
+                f"""
+                <div class="live-summary">
+                    <strong>Processing Uploaded Video</strong><br>
+                    Processed Frames: <strong>{processed_frames}</strong><br>
+                    Tracked Objects: <strong>{len(tracked_objects)}</strong><br>
+                    Detection Events: <strong>{sum(class_event_counts.values())}</strong><br>
+                    Approx FPS: <strong>{fps_live:.1f}</strong>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     cap.release()
     writer.release()
@@ -359,6 +390,32 @@ iou_threshold = st.sidebar.slider(
     "IOU Threshold", 0.0, 1.0, 0.45, 0.05, help="Used for non-max suppression and track association."
 )
 
+st.sidebar.subheader("⚡ Performance")
+speed_mode = st.sidebar.selectbox(
+    "Speed Profile",
+    ["Balanced", "Fast", "Max Speed"],
+    index=1,
+    help="Faster profiles process fewer frames and lower resolution for quicker results.",
+)
+
+if speed_mode == "Balanced":
+    video_imgsz = 960
+    frame_stride = 1
+elif speed_mode == "Fast":
+    video_imgsz = 640
+    frame_stride = 2
+else:
+    video_imgsz = 512
+    frame_stride = 3
+
+use_fp16 = st.sidebar.checkbox(
+    "Use FP16 (GPU only)",
+    value=True,
+    help="Can speed up inference on CUDA GPUs. Automatically disabled on CPU.",
+)
+if not torch.cuda.is_available():
+    use_fp16 = False
+
 model = load_model()
 
 if uploaded_file is not None:
@@ -389,6 +446,9 @@ if uploaded_file is not None:
                     model=model,
                     confidence=confidence,
                     iou_threshold=iou_threshold,
+                    imgsz=video_imgsz,
+                    frame_stride=frame_stride,
+                    use_fp16=use_fp16,
                     progress_bar=progress,
                     status_placeholder=status_placeholder,
                 )
@@ -530,9 +590,30 @@ else:
 st.markdown("---")
 st.markdown("### 📦 Project Details")
 
-tech_cols = st.columns(4)
-for column, tech in zip(tech_cols, PROJECT_CONFIG["technologies"]):
-    with column:
-        st.markdown(f'<div class="detail-card"><strong>{tech}</strong></div>', unsafe_allow_html=True)
+# Prefer README summary if available so the project page shows accurate project-specific details
+readme_path = os.path.join(os.path.dirname(__file__), "README.md")
+readme_excerpt = None
+if os.path.exists(readme_path):
+    try:
+        with open(readme_path, "r", encoding="utf-8") as rf:
+            lines = rf.read().splitlines()
+            # take header + first paragraph or until separator
+            excerpt_lines = []
+            for ln in lines:
+                if ln.strip() == "---":
+                    break
+                excerpt_lines.append(ln)
+            readme_excerpt = "\n".join(excerpt_lines[:30])
+    except Exception:
+        readme_excerpt = None
+
+if readme_excerpt:
+    st.markdown("<div class='detail-card'>" + readme_excerpt.replace('\n', '<br>') + "</div>", unsafe_allow_html=True)
+else:
+    # Fallback: show technologies from config
+    tech_cols = st.columns(4)
+    for column, tech in zip(tech_cols, PROJECT_CONFIG.get("technologies", [])):
+        with column:
+            st.markdown(f'<div class="detail-card"><strong>{tech}</strong></div>', unsafe_allow_html=True)
 
 st.markdown("<br><br><div class='footer'>© 2026 Aerial Intelligence | Drone Detection & Counting</div>", unsafe_allow_html=True)
