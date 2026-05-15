@@ -8,10 +8,17 @@ import sys
 import torch
 import torch.nn as nn
 import ultralytics.nn.tasks as tasks
+import importlib.util
 
-# Import project config
-sys.path.append(os.path.dirname(__file__))
-from config import PROJECT_CONFIG
+def load_project_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.py")
+    spec = importlib.util.spec_from_file_location("autonomous_vehicle_config", config_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PROJECT_CONFIG
+
+
+PROJECT_CONFIG = load_project_config()
 
 # Set page configuration
 st.set_page_config(

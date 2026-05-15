@@ -7,11 +7,19 @@ import cv2
 import numpy as np
 import streamlit as st
 import torch
+import importlib.util
 from PIL import Image
 from ultralytics import YOLO
 
-sys.path.append(os.path.dirname(__file__))
-from config import PROJECT_CONFIG
+def load_project_config():
+    config_path = os.path.join(os.path.dirname(__file__), "config.py")
+    spec = importlib.util.spec_from_file_location("drone_detection_config", config_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PROJECT_CONFIG
+
+
+PROJECT_CONFIG = load_project_config()
 
 st.set_page_config(
     page_title=PROJECT_CONFIG["title"],
