@@ -215,12 +215,13 @@ def build_detection_rows(model: YOLO, boxes, frame_index: int | None = None):
 st.sidebar.header("⚙️ System Config")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🛰️ Inference Mode")
-video_mode = st.sidebar.checkbox(
-    "Video Inference",
-    value=False,
-    help="Turn on for persistent tracking over video frames.",
+mode_label = st.sidebar.radio(
+    "Choose Mode",
+    ["Image Inference", "Video Inference"],
+    index=1,
+    help="Select Video Inference to upload MP4/MOV/AVI/MKV files.",
 )
-mode_label = "Video Inference" if video_mode else "Image Inference"
+video_mode = mode_label == "Video Inference"
 st.sidebar.caption(f"Active mode: {mode_label}")
 
 st.sidebar.subheader("📤 Input Feed")
