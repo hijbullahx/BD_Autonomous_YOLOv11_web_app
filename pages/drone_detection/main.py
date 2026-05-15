@@ -590,30 +590,29 @@ else:
 st.markdown("---")
 st.markdown("### 📦 Project Details")
 
-# Prefer README summary if available so the project page shows accurate project-specific details
-readme_path = os.path.join(os.path.dirname(__file__), "README.md")
-readme_excerpt = None
-if os.path.exists(readme_path):
-    try:
-        with open(readme_path, "r", encoding="utf-8") as rf:
-            lines = rf.read().splitlines()
-            # take header + first paragraph or until separator
-            excerpt_lines = []
-            for ln in lines:
-                if ln.strip() == "---":
-                    break
-                excerpt_lines.append(ln)
-            readme_excerpt = "\n".join(excerpt_lines[:30])
-    except Exception:
-        readme_excerpt = None
+# Display a canonical ANTLINGS project summary to ensure the deployed page shows
+# the intended drone project details regardless of any stale README on the host.
+ANTLINGS_MARKDOWN = '''
+🚁 ANTLINGS Drone Computer Vision Pipeline
 
-if readme_excerpt:
-    st.markdown("<div class='detail-card'>" + readme_excerpt.replace('\n', '<br>') + "</div>", unsafe_allow_html=True)
-else:
-    # Fallback: show technologies from config
-    tech_cols = st.columns(4)
-    for column, tech in zip(tech_cols, PROJECT_CONFIG.get("technologies", [])):
-        with column:
-            st.markdown(f'<div class="detail-card"><strong>{tech}</strong></div>', unsafe_allow_html=True)
+Autonomous Drone-Based Detection, Tracking & Counting System
+
+A high-performance computer vision pipeline for autonomous aerial systems built on YOLOv26m for real-time multi-class object detection, persistent multi-object tracking via ByteTrack, and dynamic zone-based counting for autonomous drone surveillance.
+
+Performance Metrics:
+- mAP50: 0.46
+- Inference Speed: 133 FPS
+- Model: YOLOv26m (Ultralytics)
+
+Features:
+- Multi-Class Object Detection – Pedestrians, Cars, Trucks, Buses
+- Persistent Multi-Object Tracking – ByteTrack
+- Dynamic Zone Counting – Polygon-based in/out metrics
+- High Performance – 133 FPS (optimized)
+
+Repository highlights: trained weights in `runs/.../weights/best.pt`, demo outputs in `outputs/` and full notebook `ANTLINGS_Drone.ipynb`.
+'''
+
+st.markdown("<div class='detail-card'>" + ANTLINGS_MARKDOWN.replace('\n', '<br>') + "</div>", unsafe_allow_html=True)
 
 st.markdown("<br><br><div class='footer'>© 2026 Aerial Intelligence | Drone Detection & Counting</div>", unsafe_allow_html=True)
