@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from pathlib import Path
 from collections import Counter
 
 import cv2
@@ -364,6 +365,18 @@ def process_video_to_file(
     }
 
 
+def read_video_bytes(video_path: str) -> bytes:
+    path = Path(video_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Processed video not found: {video_path}")
+
+    size_bytes = path.stat().st_size
+    if size_bytes <= 0:
+        raise ValueError(f"Processed video is empty: {video_path}")
+
+    return path.read_bytes()
+
+
 st.sidebar.header("⚙️ System Config")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🛰️ Inference Mode")
@@ -468,7 +481,12 @@ if uploaded_file is not None:
         final_output_file = st.session_state.get("drone_output_file", output_file)
         stats = st.session_state.get("drone_video_stats", {})
 
-        st.video(final_output_file)
+        try:
+            st.video(read_video_bytes(final_output_file), format="video/mp4")
+        except Exception as exc:
+            st.error("The processed video could not be played in the browser.")
+            st.code(str(exc), language="text")
+            st.write(f"Saved output file: {final_output_file}")
 
         tracked_objects = stats.get("tracked_objects", {})
         class_event_counts = stats.get("class_event_counts", Counter())
