@@ -260,14 +260,14 @@ if uploaded_file is not None:
         player_col, run_col = st.columns([1.2, 0.8])
 
         with player_col:
-            st.video(temp_file)
-            live_frame_placeholder = st.empty()
+            player_placeholder = st.empty()
+            player_placeholder.video(temp_file)
             live_summary_placeholder = st.empty()
 
         with run_col:
             st.markdown("### Controls")
             run_live = st.button("▶️ Start Live Detection")
-            st.caption("Annotated live frames render below the player after you start.")
+            st.caption("When started, detection runs in the same video area above.")
 
         if run_live:
             cap = cv2.VideoCapture(temp_file)
@@ -306,7 +306,8 @@ if uploaded_file is not None:
                 inference_times.append(time.perf_counter() - start_time)
                 result = results[0]
                 annotated = result.plot()
-                live_frame_placeholder.image(annotated, channels="BGR", use_container_width=True)
+                # Reuse the original player area for live annotated frames.
+                player_placeholder.image(annotated, channels="BGR", use_container_width=True)
 
                 boxes = result.boxes
                 if boxes is not None and len(boxes) > 0:
