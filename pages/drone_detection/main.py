@@ -212,6 +212,119 @@ def build_detection_rows(model: YOLO, boxes, frame_index: int | None = None):
     return rows, class_counts, confidences
 
 
+def process_video_to_file(
+    input_path: str,
+    output_path: str,
+    model: YOLO,
+    confidence: float,
+    iou_threshold: float,
+    progress_bar,
+    status_placeholder,
+):
+    cap = cv2.VideoCapture(input_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 25.0
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    processed_frames = 0
+    class_event_counts = Counter()
+    tracked_objects = {}
+    inference_times = []
+    warned_tracker = False
+
+    while cap.isOpened():
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        start_time = time.perf_counter()
+        try:
+            results = model.track(
+                frame,
+                conf=confidence,
+                iou=iou_threshold,
+                persist=True,
+                tracker="bytetrack.yaml",
+                verbose=False,
+            )
+        except (ModuleNotFoundError, ImportError):
+            if not warned_tracker:
+                st.warning("Tracker dependencies missing (e.g. 'lap'). Falling back to frame-wise detection.")
+                warned_tracker = True
+            results = model(frame, conf=confidence, iou=iou_threshold, verbose=False)
+
+        inference_times.append(time.perf_counter() - start_time)
+        result = results[0]
+        annotated = result.plot()
+
+        if annotated.shape[1] != width or annotated.shape[0] != height:
+            annotated = cv2.resize(annotated, (width, height))
+        writer.write(annotated)
+
+        boxes = result.boxes
+        if boxes is not None and len(boxes) > 0:
+            rows, _, _ = build_detection_rows(model, boxes, frame_index=processed_frames + 1)
+            for row in rows:
+                class_event_counts[row["Class"]] += 1
+                track_id = row["Track ID"]
+                key = track_id if track_id != "-" else f"frame-{processed_frames + 1}-{row['Index']}"
+                if key not in tracked_objects:
+                    tracked_objects[key] = {
+                        "Track ID": key,
+                        "Class": row["Class"],
+                        "Best Confidence": row["Confidence"],
+                        "First Seen": processed_frames + 1,
+                        "Last Seen": processed_frames + 1,
+                    }
+                else:
+                    tracked_objects[key]["Best Confidence"] = max(
+                        tracked_objects[key]["Best Confidence"], row["Confidence"]
+                    )
+                    tracked_objects[key]["Last Seen"] = processed_frames + 1
+
+        processed_frames += 1
+        if total_frames > 0:
+            progress_bar.progress(min(int((processed_frames / total_frames) * 100), 100))
+
+        avg_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
+        fps_live = 1.0 / avg_time if avg_time > 0 else 0.0
+        status_placeholder.markdown(
+            f"""
+            <div class="live-summary">
+                <strong>Processing Uploaded Video</strong><br>
+                Processed Frames: <strong>{processed_frames}</strong><br>
+                Tracked Objects: <strong>{len(tracked_objects)}</strong><br>
+                Detection Events: <strong>{sum(class_event_counts.values())}</strong><br>
+                Approx FPS: <strong>{fps_live:.1f}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    cap.release()
+    writer.release()
+
+    total_time = sum(inference_times) if inference_times else 0.0
+    avg_fps = processed_frames / total_time if total_time > 0 else 0.0
+    avg_latency_ms = (total_time / processed_frames * 1000) if processed_frames > 0 else 0.0
+
+    return {
+        "processed_frames": processed_frames,
+        "tracked_objects": tracked_objects,
+        "class_event_counts": class_event_counts,
+        "avg_fps": avg_fps,
+        "avg_latency_ms": avg_latency_ms,
+        "events": sum(class_event_counts.values()),
+    }
+
+
 st.sidebar.header("⚙️ System Config")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🛰️ Inference Mode")
@@ -257,142 +370,82 @@ if uploaded_file is not None:
         with open(temp_file, "wb") as file_handle:
             file_handle.write(uploaded_file.read())
 
-        player_col, run_col = st.columns([1.2, 0.8])
+        output_name = f"processed_{os.path.splitext(uploaded_file.name)[0]}.mp4"
+        output_file = os.path.join(temp_dir, output_name)
+        process_signature = f"{uploaded_file.name}:{uploaded_file.size}:{confidence}:{iou_threshold}"
 
-        with player_col:
-            player_placeholder = st.empty()
-            player_placeholder.video(temp_file)
-            live_summary_placeholder = st.empty()
+        needs_processing = (
+            st.session_state.get("drone_process_signature") != process_signature
+            or not os.path.exists(output_file)
+        )
 
-        with run_col:
-            st.markdown("### Controls")
-            run_live = st.button("▶️ Start Live Detection")
-            st.caption("When started, detection runs in the same video area above.")
-
-        if run_live:
-            cap = cv2.VideoCapture(temp_file)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
-            processed_frames = 0
-            class_event_counts = Counter()
-            tracked_objects = {}
-            inference_times = []
-            warned_tracker = False
+        if needs_processing:
             progress = st.progress(0)
-
-            while cap.isOpened():
-                ok, frame = cap.read()
-                if not ok:
-                    break
-
-                start_time = time.perf_counter()
-                try:
-                    results = model.track(
-                        frame,
-                        conf=confidence,
-                        iou=iou_threshold,
-                        persist=True,
-                        tracker="bytetrack.yaml",
-                        verbose=False,
-                    )
-                except (ModuleNotFoundError, ImportError):
-                    # If tracker extras are missing (e.g. lap), fallback gracefully.
-                    if not warned_tracker:
-                        st.warning(
-                            "Tracker dependencies missing (e.g. 'lap'). Falling back to frame-wise detection."
-                        )
-                        warned_tracker = True
-                    results = model(frame, conf=confidence, iou=iou_threshold, verbose=False)
-
-                inference_times.append(time.perf_counter() - start_time)
-                result = results[0]
-                annotated = result.plot()
-                # Reuse the original player area for live annotated frames.
-                player_placeholder.image(annotated, channels="BGR", use_container_width=True)
-
-                boxes = result.boxes
-                if boxes is not None and len(boxes) > 0:
-                    rows, _, _ = build_detection_rows(model, boxes, frame_index=processed_frames + 1)
-                    for row in rows:
-                        class_event_counts[row["Class"]] += 1
-                        track_id = row["Track ID"]
-                        key = track_id if track_id != "-" else f"frame-{processed_frames + 1}-{row['Index']}"
-                        if key not in tracked_objects:
-                            tracked_objects[key] = {
-                                "Track ID": key,
-                                "Class": row["Class"],
-                                "Best Confidence": row["Confidence"],
-                                "First Seen": processed_frames + 1,
-                                "Last Seen": processed_frames + 1,
-                            }
-                        else:
-                            tracked_objects[key]["Best Confidence"] = max(
-                                tracked_objects[key]["Best Confidence"], row["Confidence"]
-                            )
-                            tracked_objects[key]["Last Seen"] = processed_frames + 1
-
-                processed_frames += 1
-                if total_frames > 0:
-                    progress.progress(min(int((processed_frames / total_frames) * 100), 100))
-
-                avg_time = sum(inference_times) / len(inference_times) if inference_times else 0.0
-                fps = 1.0 / avg_time if avg_time > 0 else 0.0
-                live_summary_placeholder.markdown(
-                    f"""
-                    <div class="live-summary">
-                        <strong>Live Summary</strong><br>
-                        Processed Frames: <strong>{processed_frames}</strong><br>
-                        Tracked Objects: <strong>{len(tracked_objects)}</strong><br>
-                        Detection Events: <strong>{sum(class_event_counts.values())}</strong><br>
-                        Approx FPS: <strong>{fps:.1f}</strong>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+            status_placeholder = st.empty()
+            with st.spinner("Processing video during upload workflow... this may take a while for large files"):
+                stats = process_video_to_file(
+                    input_path=temp_file,
+                    output_path=output_file,
+                    model=model,
+                    confidence=confidence,
+                    iou_threshold=iou_threshold,
+                    progress_bar=progress,
+                    status_placeholder=status_placeholder,
                 )
 
-            cap.release()
+            st.session_state["drone_process_signature"] = process_signature
+            st.session_state["drone_output_file"] = output_file
+            st.session_state["drone_video_stats"] = stats
 
-            total_time = sum(inference_times) if inference_times else 0.0
-            avg_fps = processed_frames / total_time if total_time > 0 else 0.0
-            avg_latency_ms = (total_time / processed_frames * 1000) if processed_frames > 0 else 0.0
+        final_output_file = st.session_state.get("drone_output_file", output_file)
+        stats = st.session_state.get("drone_video_stats", {})
 
-            st.markdown("### 📊 Performance Metrics")
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.markdown(
-                    f'<div class="metric-card"><div class="metric-label">Tracked Objects</div><div class="metric-value">{len(tracked_objects)}</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with m2:
-                st.markdown(
-                    f'<div class="metric-card"><div class="metric-label">Detection Events</div><div class="metric-value">{sum(class_event_counts.values())}</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with m3:
-                st.markdown(
-                    f'<div class="metric-card"><div class="metric-label">Avg FPS</div><div class="metric-value">{avg_fps:.1f}</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with m4:
-                st.markdown(
-                    f'<div class="metric-card"><div class="metric-label">Latency / Frame</div><div class="metric-value">{avg_latency_ms:.1f} ms</div></div>',
-                    unsafe_allow_html=True,
-                )
+        st.video(final_output_file)
 
-            st.markdown("### 🧾 Tracked Object Summary")
-            if tracked_objects:
-                st.dataframe(list(tracked_objects.values()), use_container_width=True, hide_index=True)
-            else:
-                st.info("No persistent tracks were recorded in the video.")
+        tracked_objects = stats.get("tracked_objects", {})
+        class_event_counts = stats.get("class_event_counts", Counter())
+        avg_fps = stats.get("avg_fps", 0.0)
+        avg_latency_ms = stats.get("avg_latency_ms", 0.0)
+        events = stats.get("events", 0)
 
-            st.markdown("### 🎯 Class Frequency")
-            if class_event_counts:
-                class_summary_rows = [
-                    {"Class": class_name, "Count": count}
-                    for class_name, count in class_event_counts.most_common()
-                ]
-                st.dataframe(class_summary_rows, use_container_width=True, hide_index=True)
-            else:
-                st.info("No objects were detected in the uploaded video.")
+        st.markdown("### 📊 Performance Metrics")
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">Tracked Objects</div><div class="metric-value">{len(tracked_objects)}</div></div>',
+                unsafe_allow_html=True,
+            )
+        with m2:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">Detection Events</div><div class="metric-value">{events}</div></div>',
+                unsafe_allow_html=True,
+            )
+        with m3:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">Avg FPS</div><div class="metric-value">{avg_fps:.1f}</div></div>',
+                unsafe_allow_html=True,
+            )
+        with m4:
+            st.markdown(
+                f'<div class="metric-card"><div class="metric-label">Latency / Frame</div><div class="metric-value">{avg_latency_ms:.1f} ms</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("### 🧾 Tracked Object Summary")
+        if tracked_objects:
+            st.dataframe(list(tracked_objects.values()), use_container_width=True, hide_index=True)
+        else:
+            st.info("No persistent tracks were recorded in the video.")
+
+        st.markdown("### 🎯 Class Frequency")
+        if class_event_counts:
+            class_summary_rows = [
+                {"Class": class_name, "Count": count}
+                for class_name, count in class_event_counts.most_common()
+            ]
+            st.dataframe(class_summary_rows, use_container_width=True, hide_index=True)
+        else:
+            st.info("No objects were detected in the uploaded video.")
 
     else:
         st.subheader("🖼️ Drone Image Inference")
