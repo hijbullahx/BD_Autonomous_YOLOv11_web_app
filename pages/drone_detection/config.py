@@ -5,11 +5,11 @@ This config is automatically loaded by Home.py
 
 PROJECT_CONFIG = {
     "id": "drone_detection",
-    "title": "Aerial Perception: Drone Detection & Counting",
+    "title": "🚁 ANTLINGS Drone Computer Vision Pipeline",
     "status": "Active",
     "icon": "🚁",
     "page_name": "3_🚁_Drone_Detection.py",
-    "description": "Advanced YOLOv26m pipeline for high-altitude human and vehicle detection with persistent tracking.",
+    "description": "Autonomous drone-based detection, tracking and counting using YOLOv26m and ByteTrack. High-altitude human and vehicle perception and zone-based analytics.",
     "technologies": [
         "YOLOv26m (Ultralytics)",
         "VisDrone Dataset",
